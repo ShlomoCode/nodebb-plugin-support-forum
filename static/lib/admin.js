@@ -1,24 +1,15 @@
 'use strict';
 
-define('admin/plugins/support-forum', [
-	'settings', 'alerts',
-], (settings, alerts) => {
-	const ACP = {};
+import { save, load } from 'settings';
 
-	ACP.init = function () {
-		settings.load('support-forum', $('.support-forum-settings'));
-		$('#save').on('click', saveSettings);
-	};
+export function init() {
+	handleSettingsForm();
+};
 
-	function saveSettings() {
-		settings.save('support-forum', $('.support-forum-settings'), () => {
-			alerts.alert({
-				type: 'success',
-				alert_id: 'support-forum-saved',
-				title: 'Settings Saved',
-			});
-		});
-	}
+function handleSettingsForm() {
+	load('support-forum', $('.support-forum-settings'));
 
-	return ACP;
-});
+	$('#save').on('click', () => {
+		save('support-forum', $('.support-forum-settings'));
+	});
+}

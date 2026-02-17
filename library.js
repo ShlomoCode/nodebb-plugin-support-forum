@@ -170,6 +170,7 @@ plugin.addAdminNavigation = function (header, callback) {
 async function renderAdmin(req, res) {
 	const categories = await Categories.getAllCategories(req.user.uid);
 	res.render('admin/plugins/support-forum', {
+		title: 'Support Forum',
 		categories: categories.map(category => ({
 			cid: category.cid,
 			name: category.name,
