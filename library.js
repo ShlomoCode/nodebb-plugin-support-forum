@@ -46,17 +46,34 @@ plugin.supportify = async (data) => {
 
 plugin.restrict = {};
 
+async function allowCheck(uid) {
+	const { cid, allowMods } = await meta.settings.get('support-forum');
+	let allowed = false;
+
+	if (allowMods === 'on') {
+		const [isMod, isAdminOrGlobalMod] = await Promise.all([
+			User.isModerator(uid, cid),
+			User.isAdminOrGlobalMod(uid),
+		]);
+		allowed = isMod || isAdminOrGlobalMod;
+	} else {
+		allowed = await User.isAdministrator(uid);
+	}
+
+	return allowed;
+}
+
 plugin.restrict.topic = async (privileges) => {
 	const { cid } = await meta.settings.get('support-forum');
 	const data = await utils.promiseParallel({
 		topicObj: Topics.getTopicFields(privileges.tid, ['cid', 'uid']),
-		isAdmin: User.isAdministrator(privileges.uid),
+		allowed: allowCheck(privileges.uid),
 	});
 
 	if (
 		parseInt(data.topicObj.cid, 10) === parseInt(cid, 10) &&
 		parseInt(data.topicObj.uid, 10) !== parseInt(privileges.uid, 10) &&
-		!data.isAdmin
+		!data.allowed
 	) {
 		winston.verbose(`[plugins/support-forum] tid ${privileges.tid} (author uid: ${data.topicObj.uid}) access attempt by uid ${privileges.uid} blocked.`);
 		privileges['topics:read'] = false;
@@ -85,8 +102,8 @@ plugin.restrict.category = async (privileges) => {
 plugin.filterPids = async (data) => {
 	const { caller, pids } = data;
 	if (caller.uid) {
-		const isAdmin = await User.isAdministrator(caller.uid);
-		if (isAdmin) return data;
+		const allowed = await allowCheck(caller.uid);
+		if (allowed) return data;
 	}
 	const { cid } = await meta.settings.get('support-forum');
 	const postsData = await Topics.getTopicsFields(pids, ['cid', 'uid']);
@@ -103,9 +120,9 @@ plugin.filterPids = async (data) => {
 
 plugin.filterTids = async (data) => {
 	const { cid } = await meta.settings.get('support-forum');
+	const allowed = await allowCheck(data.uid);
 
-	const isAdmin = await User.isAdministrator(data.uid);
-	if (!isAdmin) {
+	if (!allowed) {
 		const fields = await Topics.getTopicsFields(data.tids, ['cid', 'uid']);
 		data.tids = fields.reduce((prev, cur, idx) => {
 			if (
@@ -123,9 +140,9 @@ plugin.filterTids = async (data) => {
 
 plugin.filterCategory = async (data) => {
 	const { cid, ownOnly } = await meta.settings.get('support-forum');
-	const isAdmin = await User.isAdministrator(data.uid);
+	const allowed = await allowCheck(data.uid, data.cid);
 
-	if (ownOnly === 'on' && !isAdmin) {
+	if (ownOnly === 'on' && !allowed) {
 		const filtered = [];
 		if (data.topics && data.topics.length) {
 			data.topics.forEach((topic) => {
@@ -147,7 +164,7 @@ plugin.blockUserFollowNotifications = async (data) => {
 		const topic = await Topics.getTopicFields(data.notification.tid, ['cid']);
 		if (parseInt(topic.cid, 10) === parseInt(cid, 10)) {
 			const { uids } = data;
-			const uidsFlow = await Promise.all(uids.map(uid => User.isAdministrator(parseInt(uid, 10))))
+			const uidsFlow = await Promise.all(uids.map(uid => allowCheck(parseInt(uid, 10))))
 			data.uids = uids.filter((_v, index) => uidsFlow[index])
 			if (uids.length - data.uids.length) winston.verbose(`[plugins/support-forum] Notification (category:support - cid: ${cid}) blocked for ${uids.length - data.uids.length} users not admin`);
 		}
