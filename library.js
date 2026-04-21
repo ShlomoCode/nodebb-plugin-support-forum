@@ -100,20 +100,26 @@ plugin.restrict.category = async (privileges) => {
 };
 
 plugin.filterPids = async (data) => {
-	const { caller, pids } = data;
-	if (caller.uid) {
-		const allowed = await allowCheck(caller.uid);
+	const { pids } = data;
+	// filter:account.profile.getPids passes `caller` (the request) — use the
+	// viewer's uid there. Other hooks (filter:privileges.posts.filter,
+	// filter:categories.recent) pass `uid` directly for the viewer.
+	const viewerUid = (data.caller && data.caller.uid) || data.uid || 0;
+	if (viewerUid) {
+		const allowed = await allowCheck(viewerUid);
 		if (allowed) return data;
 	}
 	const { cid } = await meta.settings.get('support-forum');
-	const postsData = await Topics.getTopicsFields(pids, ['cid', 'uid']);
+	const supportCid = parseInt(cid, 10);
+	const callerUid = parseInt(viewerUid, 10);
+	const postsData = await Posts.getPostsFields(pids, ['tid', 'uid']);
+	const topicsData = await Topics.getTopicsFields(postsData.map(p => (p && p.tid) || 0), ['cid']);
 	const pidsFiltered = pids.filter((item, i) => {
-		const post = postsData[i];
-		const isSupport = parseInt(post.cid, 10) === parseInt(cid, 10);
-		const isAuthor = parseInt(post.uid, 10) === parseInt(caller.uid, 10);
+		const isSupport = parseInt(topicsData[i] && topicsData[i].cid, 10) === supportCid;
+		const isAuthor = parseInt(postsData[i] && postsData[i].uid, 10) === callerUid;
 		return (!isSupport || isAuthor);
 	})
-	winston.verbose(`[plugins/support-forum] blocked ${pids.length - pidsFiltered.length} posts for user ${caller.uid}`);
+	winston.verbose(`[plugins/support-forum] blocked ${pids.length - pidsFiltered.length} posts for user ${viewerUid}`);
 	data.pids = pidsFiltered;
 	return data;
 };
